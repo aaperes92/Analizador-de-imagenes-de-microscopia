@@ -8,9 +8,13 @@ El módulo `sem` trabaja con imágenes de microscopía electrónica de barrido (
 1. **[Carga](#carga)**: lee la imagen, interpreta su metadata de adquisición, quita la barra
    de datos y permite seleccionar y guardar una región de interés (ROI).
    Código: [`src/sem/carga.py`](../src/sem/carga.py).
-2. **[Preprocesamiento](#preprocesamiento)**: mejora la ROI antes de segmentarla (suavizado,
-   corrección de sombras, ecualización de contraste y normalización tanh).
-   Código: [`src/sem/preprocesamiento.py`](../src/sem/preprocesamiento.py).
+2. **[Suavizado](#suavizado)**: reduce el ruido de la ROI preservando los bordes entre fases,
+   con parámetros que se fijan automáticamente a partir de la imagen.
+   Código: [`src/sem/suavizado.py`](../src/sem/suavizado.py).
+
+Desde la etapa 2, el procesamiento está pensado para imágenes de **electrones retrodispersados
+(BSE)**, donde cada fase aparece como una población de intensidad. Las imágenes de electrones
+secundarios (SE) requieren un análisis distinto, todavía no implementado.
 
 Al final hay un [glosario](#glosario) con los términos técnicos.
 
@@ -32,7 +36,8 @@ Librerías que usa el módulo SEM:
 | `scikit-image` | Lectura de imágenes y todo el procesamiento (filtros, morfología, ecualización) |
 | `tifffile` | Lectura de la metadata propietaria de los TIFF de FEI y Zeiss |
 | `exifread` | Lectura de metadata EXIF estándar (respaldo) |
-| `matplotlib` | Figuras y ventanas interactivas (selector de ROI, sliders) |
+| `pywavelets` | Requerida por `skimage.restoration.estimate_sigma` (estimación del ruido) |
+| `matplotlib` | Figuras y ventana interactiva del selector de ROI |
 
 El módulo no usa OpenCV.
 
@@ -42,9 +47,11 @@ El módulo no usa OpenCV.
 src/sem/
     __init__.py           expone las funciones públicas del módulo
     carga.py              lectura, metadata, barra de datos y ROI
-    preprocesamiento.py   suavizado, sombras, ecualización y tanh
+    suavizado.py          estimación del ruido y suavizado non-local means
 scripts/
     sem_carga.py          script de línea de comandos para la carga
+notebooks/
+    sem_suavizado.ipynb   prueba del suavizado sobre ROIs reales, paso a paso
 data/sem/roi/             ROIs guardadas (no se versionan en git)
 ```
 
@@ -54,7 +61,7 @@ Las funciones se pueden importar desde el paquete:
 import sys
 sys.path.insert(0, "src")          # desde la raíz del proyecto
 
-from sem import cargar_imagen, leer_metadata, recortar_barra_datos, suavizar
+from sem import cargar_imagen, leer_metadata, recortar_barra_datos
 ```
 
 Todas las funciones tienen docstring con sus parámetros, retorno y errores: esa es la
@@ -210,79 +217,87 @@ incluye la metadata `crudo` del fabricante.
 
 ---
 
-## Preprocesamiento
+## Suavizado
 
-Prepara la ROI para la segmentación. El orden de los pasos es:
+Reduce el ruido de la ROI antes de corregir la iluminación y separar las poblaciones. Al bajar
+el ruido, las poblaciones de intensidad se angostan en el histograma y se distinguen mejor.
 
-```
-ROI -> suavizar -> corregir_sombras -> ecualizar -> normalizar_tanh
-```
+### Uso
 
 ```python
-roi_suave       = suavizar(roi, sigma=1.0)
-roi_sin_sombras = corregir_sombras(roi_suave, metodo="blur_resta", fraccion=0.03)
-roi_ecualizada  = ecualizar(roi_sin_sombras, metodo="clahe", clip_limit=0.01)
-roi_procesada   = normalizar_tanh(roi_ecualizada, factor=2.0)
+import numpy as np
+from sem.suavizado import suavizar
+
+roi = np.load("data/sem/roi/BSE_1/BSE_1_1/roi_BSE_1_1.npy")
+roi_suave = suavizar(roi)          # todos los parámetros se fijan automáticamente
 ```
+
+El notebook [`notebooks/sem_suavizado.ipynb`](../notebooks/sem_suavizado.ipynb) recorre el
+proceso paso a paso sobre las ROIs de una imagen, con figuras e histogramas de antes y después.
 
 ### Funcionamiento
 
+El suavizado usa **non-local means** (`skimage.restoration.denoise_nl_means`). Para cada
+píxel busca, en una ventana alrededor, parches parecidos al suyo y promedia sus centros, con más
+peso cuanto más parecidos son. En un borde entre fases los parches de la otra fase no se
+parecen, así que casi no se mezclan y **el borde se conserva**. Esto es importante en BSE: un
+filtro que borronea los bordes (como el gaussiano) crea píxeles de intensidad intermedia que
+después parecen una población más.
+
+La intensidad del filtrado es `h = factor_h × σ`, donde σ es la desviación estándar del ruido.
+Ningún parámetro se ajusta a mano:
+
+| Parámetro | Cómo se fija | Función |
+|---|---|---|
+| σ (ruido) | Se estima de la propia ROI | `estimar_ruido` |
+| `factor_h` | Criterio de discrepancia | `buscar_factor_h` |
+| `tamano_parche` | 5×5, elegido con la prueba de parches (ver abajo) | — |
+| `distancia_parche` | 6 píxeles (valor típico de skimage) | — |
+
+#### Estimación del ruido — `estimar_ruido`
+
+Usa `skimage.restoration.estimate_sigma`: descompone la imagen con una transformada wavelet y
+toma los coeficientes de detalle más finos, donde casi todo es ruido. La desviación estándar se
+calcula con la mediana del valor absoluto (`σ = mediana(|c|) / 0.6745`). La mediana hace que los
+bordes entre fases, que también generan coeficientes grandes pero ocupan una fracción chica de la
+imagen, casi no afecten la estimación (Donoho y Johnstone, 1994).
+
+Las ROIs de una misma imagen dan un σ parecido, porque el ruido depende del equipo y de la
+adquisición, no de la zona.
+
+#### Intensidad del filtrado — `buscar_factor_h`
+
+Aplica el **criterio de discrepancia**: el filtrado es adecuado cuando lo que se quita tiene la
+misma desviación estándar que el ruido,
+
+```
+desviación estándar(original − suavizada) = σ
+```
+
+Si se quita menos, queda ruido; si se quita más, se borra señal. Como lo quitado crece con
+`factor_h`, el valor se busca por bisección entre 0.3 y 3.0 y se corta cuando la diferencia es
+menor al 2 % (en general alcanza con 5 o 6 filtrados). En las imágenes probadas da
+`factor_h ≈ 1.1`.
+
 #### Suavizado — `suavizar`
 
-Filtro gaussiano (`skimage.filters.gaussian`) para reducir el ruido de alta frecuencia.
-`sigma` es el desvío del filtro en píxeles; debe ser bastante menor que las estructuras que se
-quieren conservar. Como referencia, un filtro de caja de lado `k` equivale a una gaussiana de
-`sigma ≈ k / √12`.
+Combina las dos anteriores: si no se le pasan `sigma_ruido` ni `factor_h`, los calcula, y
+después filtra. Si se le pasan, usa esos valores (por ejemplo, para usar el mismo σ en todas las
+ROIs de una imagen). Devuelve una imagen nueva `float32` con el mismo tamaño.
 
-#### Corrección de sombras — `corregir_sombras`
+#### Elección del tamaño de parche
 
-Corrige la iluminación no uniforme. Hay dos métodos:
+La discrepancia fija **cuánto** se quita, pero no elige el parche: para cada tamaño hay un
+`factor_h` que la cumple. Para compararlos se mira **qué** se quitó, con la autocorrelación a
+1 píxel de lo quitado (la correlación entre lo quitado y lo quitado corrido un píxel). Si lo
+quitado es ruido, los vecinos no se parecen y la autocorrelación es baja; si el filtro se llevó
+parte de la imagen, lo quitado tiene forma y la autocorrelación sube.
 
-- **`blur_resta`**: estima el fondo con un gaussiano ancho y lo resta. Adecuado cuando la
-  iluminación varía de forma gradual. El ancho del fondo es
-  `sigma_fondo = fraccion × √(alto × ancho) / √12`, es decir, equivale a un filtro de caja de
-  lado `fraccion × √(alto × ancho)`. La salida queda centrada en 0 (con valores negativos).
-  Con `fraccion` chica actúa como un filtro pasa-altos fuerte: realza la textura fina pero
-  iguala regiones grandes de distinto brillo.
-- **`white_tophat`**: resta a la imagen su apertura morfológica con un disco de radio `radio`.
-  Adecuado cuando el fondo tiene cambios bruscos. Se conserva lo que es **más chico que el
-  disco** y se elimina lo más grande, así que el radio debe superar la estructura más grande
-  que se quiere conservar. El disco se descompone en cruces (`decomposition="crosses"`), una
-  aproximación muy cercana al disco exacto y mucho más rápida. La salida es ≥ 0.
-
-#### Ecualización — `ecualizar`
-
-Primero reescala la entrada a [0, 1] (acepta valores negativos, como la salida de
-`blur_resta`) y después aplica uno de tres métodos:
-
-- **`clahe`**: ecualización adaptativa por regiones con límite de recorte
-  (`skimage.exposure.equalize_adapthist`). `clip_limit` controla cuánto se realza el contraste
-  local. El rango útil es bajo: por encima de ~0.02 el recorte deja de actuar y el resultado
-  ya no cambia.
-- **`global`**: ecualización del histograma de toda la imagen.
-- **`rescale`**: solo el reescalado a [0, 1].
-
-La salida es `float32` en [0, 1].
-
-#### Normalización tanh — `normalizar_tanh`
-
-```
-salida = tanh(factor × (x − mediana) / max|x − mediana|)
-```
-
-Centra la imagen en su mediana y aplica una tangente hiperbólica: comprime los extremos y
-expande los tonos cercanos a la mediana. Con `factor` alto los valores se acercan a ±1 y la
-imagen se aproxima a una binaria; con `factor` bajo el resultado es casi lineal.
-
-**La salida está en (−1, 1), no en [0, 1].** La mediana queda en 0, así que el signo indica
-si un píxel está por encima o por debajo de la intensidad típica.
-
-#### Exploración interactiva — `explorar_preprocesamiento`
-
-Ventana con 4 sliders (sigma, fracción de sombras o radio del tophat, `clip_limit` y factor
-tanh) que muestra en tiempo real la ROI original, la corregida, la ecualizada, la normalizada
-y sus histogramas. Cada slider recalcula solo desde su paso en adelante. Al cerrar imprime los
-valores elegidos y los retorna en un diccionario.
+Con las ROIs de prueba, 5×5 dio la menor autocorrelación en todas; 3×3 se lleva parte de la
+microestructura. La autocorrelación horizontal sale siempre algo mayor que la vertical por el
+barrido del haz, que hace que el ruido de una misma fila esté algo relacionado. Para imágenes muy
+distintas (otra magnificación u otro equipo) conviene repetir esta prueba, que está en el anexo
+del notebook.
 
 ---
 
@@ -298,6 +313,8 @@ valores elegidos y los retorna en un diccionario.
 | **WD** | Distancia de trabajo entre la lente y la muestra |
 | **Barra de datos** | Franja inferior de la imagen con escala y datos de adquisición |
 | **Histograma** | Cantidad de píxeles en cada nivel de intensidad |
-| **CLAHE** | Ecualización adaptativa del histograma con límite de contraste |
-| **Apertura / tophat** | Operaciones morfológicas: la apertura elimina estructuras brillantes más chicas que el disco; el tophat es la imagen menos su apertura |
+| **Población** | Grupo de píxeles con intensidad parecida (un pico del histograma); en BSE, una fase |
+| **Non-local means** | Filtro que promedia píxeles cuyos vecindarios (parches) se parecen, aunque estén lejos |
+| **Criterio de discrepancia** | Regla para fijar la intensidad de un filtro: lo quitado debe tener la desviación estándar del ruido |
+| **Autocorrelación** | Correlación de una imagen consigo misma corrida unos píxeles; mide si los vecinos se parecen |
 | **Backend de matplotlib** | Motor que dibuja las figuras; uno "con ventanas" (TkAgg, QtAgg) es necesario para las herramientas interactivas |

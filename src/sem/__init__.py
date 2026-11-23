@@ -10,24 +10,16 @@ from .carga import (
     seleccionar_roi,
 )
 
-# Preprocesamiento: suavizado, sombras, ecualización y tanh
-from .preprocesamiento import (
-    corregir_sombras,
-    ecualizar,
-    explorar_preprocesamiento,
-    normalizar_tanh,
-    suavizar,
-)
+# Suavizado: estimación del ruido y non-local means
+from .suavizado import buscar_factor_h, estimar_ruido, suavizar
 
 __all__ = [
+    "buscar_factor_h",
     "cargar_imagen",
-    "corregir_sombras",
-    "ecualizar",
-    "explorar_preprocesamiento",
+    "estimar_ruido",
     "guardar_roi",
     "leer_metadata",
     "mostrar_imagen_con_histograma",
-    "normalizar_tanh",
     "recortar_barra_datos",
     "seleccionar_roi",
     "suavizar",
