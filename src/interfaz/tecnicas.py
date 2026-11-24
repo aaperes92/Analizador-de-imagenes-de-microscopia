@@ -22,7 +22,7 @@ from .ejecucion import Resultado, pngs_nuevos
 RAIZ: Path = Path(__file__).resolve().parents[2]
 
 # Carpetas de salida: las mismas de siempre
-SALIDA_MOKE: Path = RAIZ / "resultados"
+SALIDA_MOKE: Path = RAIZ / "data" / "moke" / "resultados"  # como moke/analizadorMOKE.py
 SALIDA_SEM: Path = RAIZ / "data" / "sem" / "roi"   # como scripts/sem_carga.py
 
 
