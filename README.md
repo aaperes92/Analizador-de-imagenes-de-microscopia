@@ -83,3 +83,40 @@ son patrones de difracción): `uv run python scripts/analizar_tem.py
 "RUTA"`; con `--difraccion` se fuerza el análisis de difracción.
 
 Documentación completa: [docs/tem.md](docs/tem.md).
+
+
+## Módulo MOKE
+Detección de dominios magnéticos en secuencias de imágenes de microscopía
+Kerr (`moke.py`): lee imágenes numeradas (`0.png`, `1.png`, …, también
+`.jpg`) y una imagen de fondo tomada sin el dominio. Con ella corrige la
+iluminación despareja de la apertura y calcula el contraste relativo
+(imagen − fondo) / fondo, de modo que −0.10 significa un 10 % más oscuro.
+
+En cada imagen encuentra la apertura iluminada y descarta su borde. Ubica
+el dominio a partir de una semilla, que sale de la última imagen (la del
+dominio más grande), y lo separa del fondo con un umbral iterativo a mitad
+de camino entre ambos niveles. Después extrae el contorno y le ajusta un
+círculo por mínimos cuadrados. Guarda centro, radio, área y contraste, y
+marca como dudosas las imágenes con contraste menor que 3 veces el ruido.
+Si no hay imagen de fondo, la estima con un polinomio 2D robusto.
+
+```bash
+uv run python main.py moke background.png evolucion_dominio --escala 75 --unidad nm
+```
+
+Desde Python, para una carpeta o para una sola imagen:
+
+```python
+import moke
+filas = moke.analizadorMOKE("background.png", "evolucion_dominio",
+                            escala=75, unidad="nm")      # carpeta completa
+img = moke.leer_gris("evolucion_dominio/10.png")
+fondo = moke.leer_gris("evolucion_dominio/background.png")
+res = moke.detectar_dominio(img, referencia=fondo)       # una imagen
+res["radio"], res["centro"], res["area"], res["contraste"]
+```
+
+Los resultados quedan en `resultados/`: una figura `dominio_<n>.png` por
+imagen, con el contorno y el círculo ajustado, y la tabla `medidas_moke.csv`
+con la evolución del dominio cuadro a cuadro. Documentación completa en
+[`docs/moke.md`](docs/moke.md).
