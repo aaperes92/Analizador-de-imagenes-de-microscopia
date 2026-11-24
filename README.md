@@ -4,7 +4,7 @@
 ## Overview
 
 EL programa contiene herramientas para analizar imágenes obtenidas mediante técnicas de microscopía, incluyendo TEM, SEM y Microscopía MOKE.
-Comprende funciones para procesar imágenes, segmentarlas y extraer información relevante sobre la composición de las muestras. 
+Comprende funciones para procesar imágenes, segmentarlas y extraer información relevante sobre la composición de las muestras.
 Además, permite seleccionar funciones en dependencia si estas analizando imágenes de MOKE, o de TEM/SEM.
 
 #Requeriments
@@ -27,9 +27,9 @@ pip install numpy scipy matplotlib scikit-image
 
 # Output data
 - Los resultados del análisis se presentan en forma de gráficos y tablas, que incluyen ajustes de curvas
-- Concentraciones relativas de los elementos presentes en la muestra, obtenidas a partir de las imágenes de microscopía y los datos experimentales.
-- Imágenes segmentadas y procesadas, que muestren cada elemento por separado.
-- Para imágenes de MOKE, se pueden obtener mapas de contraste magnético y tamaños de dominio.
+- Poblaciones relativas de los compuestos presentes en la muestra, obtenidas a partir de las imágenes de microscopía y los datos experimentales.
+- Imágenes segmentadas y procesadas, que muestren cada compuesto por separado.
+- Para imágenes de MOKE, se pueden obtener mapas de contraste magnético, contornos y tamaños de dominio.
 
 # Additional information
 

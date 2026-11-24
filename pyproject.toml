@@ -8,9 +8,11 @@ dependencies = [
     "mrcfile>=1.5.4",
     "ncempy>=1.17",
     "numpy>=2.5.4",
+    "pywavelets>=1.10.0",
     "scikit-image>=0.26.0",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
+    "tifffile>=2026.11.8",
 ]
 
 [dependency-groups]
