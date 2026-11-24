@@ -16,7 +16,10 @@ import numpy as np
 from numpy.polynomial import polynomial as P
 from scipy import ndimage as ndi
 from skimage import filters, io, measure, morphology, segmentation, transform
+from skimage.util import img_as_float
 
+def leer_gris(ruta):
+    return img_as_float(io.imread(ruta, as_gray=True))
 
 def detectar_dominio(img, semilla=None, referencia=None, escala=4, sigma=12,
                      margen=80, suavizado=24, orden=2):
@@ -174,8 +177,8 @@ def mostrar_dominio(img, res, ax=None):
     ax.axis("off")
     return ax
 
-
-def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad="px"):
+def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad="px",
+                   graficar=False):
     """Analiza PNG numerados, excluyendo el fondo y usándolo como referencia.
 
     background puede ser un nombre dentro de carpeta o una ruta al archivo.
@@ -196,8 +199,7 @@ def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad=
     if not archivo_fondo.is_file():
         raise FileNotFoundError(f"No se encontró la imagen de fondo: {background}")
     archivo_fondo = archivo_fondo.resolve()
-    fondo = io.imread(archivo_fondo, as_gray=True).astype(float)
-
+    fondo = leer_gris(archivo_fondo)
     # Excluir el fondo ANTES de int(f.stem): puede llamarse background.png.
     archivos = [
         f for f in carpeta.iterdir()
@@ -214,13 +216,13 @@ def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad=
     salida.mkdir(parents=True, exist_ok=True)
 
     # La referencia también se usa para encontrar la semilla inicial.
-    ultima = io.imread(archivos[-1], as_gray=True).astype(float)
+    ultima = leer_gris(archivos[-1])
     semilla = detectar_dominio(ultima, referencia=fondo)["centro"]
 
     filas = [["archivo", "fila_centro_px", "col_centro_px", "radio_px",
               f"radio_{unidad}", f"area_{unidad}2", "contraste", "dudoso"]]
     for f in archivos:
-        img = io.imread(f, as_gray=True).astype(float)
+        img = leer_gris(f)
         try:
             res = detectar_dominio(img, semilla=semilla, referencia=fondo)
         except ValueError as error:
@@ -228,8 +230,11 @@ def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad=
             continue
 
         ax = mostrar_dominio(img, res)
+
+        # después
         ax.figure.savefig(salida / f"dominio_{f.stem}.png", dpi=150, bbox_inches="tight")
-        plt.show()
+        if graficar:
+            plt.show()
         plt.close(ax.figure)
 
         dudoso = abs(res["contraste"]) < 3 * res["ruido"]
