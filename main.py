@@ -1,6 +1,6 @@
 import argparse
-
-import moke
+from src.moke import moke, 
+from src.tem import compositional, diffraction, fraction, loader, morphology, phase_analysis, segmentation, spatial 
 # import sem
 # import tem
 
