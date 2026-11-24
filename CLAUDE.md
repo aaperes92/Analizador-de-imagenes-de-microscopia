@@ -47,6 +47,7 @@ src/sem/            código del módulo (una etapa por archivo)
 scripts/sem_*.py    scripts de línea de comandos
 docs/sem.md         documentación: qué hace y cómo funciona cada parte
 notebooks/sem_*     notebooks para probar cada etapa con las ROIs reales
+pruebas_sem/        figuras de las pruebas, una subcarpeta por etapa (suavizado/, sombras/, ...)
 imagenes/SEM/BSE/   imágenes BSE originales (no se versionan)
 imagenes/SEM/SE/    imágenes SE originales (no se versionan)
 data/sem/roi/       ROIs generadas por la carga (no se versionan)
@@ -58,7 +59,8 @@ data/sem/roi/       ROIs generadas por la carga (no se versionan)
 - Los parámetros se fijan con criterios objetivos a partir de la imagen, no ajustándolos a
   mano para cada caso.
 - Documentación de nivel profesional: docstrings, comentarios y `docs/sem.md` actualizados.
-- El procesamiento de imágenes se hace solo con `skimage`.
+- Para el procesamiento de imágenes se prioriza `skimage`, pero se pueden usar otros paquetes
+  (por ejemplo `scipy` o `scikit-learn`) cuando resuelvan mejor el problema.
 - Priorizar el estilo del curso de Python Científico: https://wpregliasco.github.io/python-sci/
 
 ## Referencias de skimage
