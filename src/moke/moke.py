@@ -221,7 +221,8 @@ def analizadorMOKE(background, carpeta, salida="resultados", escala=1.0, unidad=
 
     filas = [["archivo", "fila_centro_px", "col_centro_px", "radio_px",
               f"radio_{unidad}", f"area_{unidad}2", "contraste", "dudoso"]]
-    for f in archivos:
+    for i, f in enumerate(archivos, start=1):
+        print(f"[{i}/{len(archivos)}] {f.name}")
         img = leer_gris(f)
         try:
             res = detectar_dominio(img, semilla=semilla, referencia=fondo)

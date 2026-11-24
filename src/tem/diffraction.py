@@ -17,6 +17,7 @@ Autor: Daniel Romero (daniel.romero@ib.edu.ar)
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -846,7 +847,8 @@ def _ask(prompt: str, default: float) -> float:
 
 
 def read_camera_metadata(
-    filepath: str | Path, interactive: bool = True
+    filepath: str | Path, interactive: bool = True,
+    pedir_dato: Callable[[str, float], float] | None = None,
 ) -> dict:
     """Lee los parámetros de adquisición y calcula la calibración.
 
@@ -866,6 +868,9 @@ def read_camera_metadata(
         interactive: Si es True, pide por teclado los datos que faltan.
             Si es False, usa los valores por defecto (para carpetas y
             tests).
+        pedir_dato: Función (texto, valor por defecto) -> número que
+            reemplaza a la pregunta por teclado cuando interactive es
+            True (la usa la interfaz gráfica). None = por teclado.
 
     Returns:
         Diccionario con 'camera_length_mm', 'voltage_kV',
@@ -931,7 +936,7 @@ def read_camera_metadata(
             return float(value)
         if interactive:
             sources[name] = "usuario"
-            return _ask(prompt, default)
+            return (pedir_dato or _ask)(prompt, default)
         sources[name] = "por_defecto"
         return default
 
@@ -2755,6 +2760,8 @@ def pipeline_diffraction(
     instrumental_fwhm_px: float = 0.0,
     output_dir: str | Path | None = None,
     show: bool = True,
+    pedir_dato: Callable[[str, float], float] | None = None,
+    corregir_centro: bool | None = None,
 ) -> dict:
     """Análisis completo de un patrón de difracción (Etapa 4.5).
 
@@ -2789,6 +2796,11 @@ def pipeline_diffraction(
         instrumental_fwhm_px: Ancho instrumental para Scherrer.
         output_dir: Carpeta de salida de la figura.
         show: Si es True, muestra la figura.
+        pedir_dato: Función (texto, valor por defecto) -> número para
+            pedir los metadatos que faltan sin usar el teclado (ver
+            read_camera_metadata). None = por teclado.
+        corregir_centro: Si se abre la ventana para corregir el centro.
+            None = igual que interactive.
 
     Returns:
         {'es_difraccion': False, 'filepath'} si no es difracción; si no,
@@ -2802,7 +2814,8 @@ def pipeline_diffraction(
     if image is None:
         image = load_tem_image(path)
     print("=" * 72 + "\nETAPA 4.5 — Análisis de difracción\n" + "=" * 72)
-    meta = read_camera_metadata(path, interactive=interactive)
+    meta = read_camera_metadata(path, interactive=interactive,
+                                pedir_dato=pedir_dato)
     if not force and not is_diffraction_pattern(image, meta):
         print("No es un patrón de difracción: se sigue con las Etapas 2-4.")
         return {"es_difraccion": False, "filepath": str(path)}
@@ -2811,7 +2824,7 @@ def pipeline_diffraction(
     center = None
     if not one_d:
         center = find_beam_center(image)
-        if interactive:
+        if interactive if corregir_centro is None else corregir_centro:
             info = _pattern_features(image, center)
             guides = [r for r, c in zip(info["radios_anillos"],
                                         info["coberturas"])

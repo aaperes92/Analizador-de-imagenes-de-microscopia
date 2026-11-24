@@ -44,6 +44,66 @@ Para consultas relacionadas con el conjunto de datos, puede comunicarse con los 
 - [daniel.romero@ib.edu.ar]
 - [angel.perez@ib.edu.ar]
 
+## Cómo usarlo: interfaz gráfica
+El proyecto usa [uv](https://docs.astral.sh/uv/). Desde la raíz se instalan
+las dependencias y se abre la interfaz:
+
+```bash
+uv sync
+uv run python main.py
+```
+
+En la ventana se elige la técnica (MOKE, SEM o TEM) y se muestran solo sus
+opciones. La entrada (carpeta o archivo) se elige con un diálogo y
+"Analizar" corre el análisis en segundo plano: la ventana no se congela y
+el registro muestra los mensajes de cada módulo, el avance (imagen i de N),
+los avisos, los errores y la carpeta donde quedaron los resultados. Un error
+en una imagen se informa y, con una carpeta, se sigue con la siguiente.
+
+| Técnica | Entrada | Opciones | Resultados |
+|---|---|---|---|
+| MOKE | carpeta `0.png`, `1.png`, … y la imagen de fondo | escala y unidad | `resultados/` |
+| SEM (solo BSE) | una imagen `.tif` (abre el selector de ROI) o una carpeta con ROIs guardadas | sufijo de la ROI, intensidad de pozos | `data/sem/roi/` |
+| TEM | una imagen o una carpeta (`.dm3`, `.mrc`, `.tif`, `.tiff`, `.png`, `.jpg`) | filtro, umbral, fases, fondo, difracción, ancho instrumental | `data/samples/` |
+
+Las figuras se guardan siempre; con una sola imagen, además se abren en
+ventanas aparte. El código de la interfaz está en `src/interfaz/`. Los
+scripts de `scripts/` siguen funcionando igual que antes.
+
+## Módulo MOKE
+Detección de dominios magnéticos en secuencias de imágenes de microscopía
+Kerr (`src/moke/`): lee imágenes numeradas (`0.png`, `1.png`, …, también
+`.jpg`) y una imagen de fondo tomada sin el dominio. Con ella corrige la
+iluminación despareja de la apertura y calcula el contraste relativo
+(imagen − fondo) / fondo, de modo que −0.10 significa un 10 % más oscuro.
+
+En cada imagen encuentra la apertura iluminada y descarta su borde. Ubica
+el dominio a partir de una semilla, que sale de la última imagen (la del
+dominio más grande), y lo separa del fondo con un umbral iterativo a mitad
+de camino entre ambos niveles. Después extrae el contorno y le ajusta un
+círculo por mínimos cuadrados. Guarda centro, radio, área y contraste, y
+marca como dudosas las imágenes con contraste menor que 3 veces el ruido.
+Si no hay imagen de fondo, la estima con un polinomio 2D robusto.
+
+Desde la interfaz: técnica MOKE, carpeta, fondo, escala y unidad. Desde
+Python:
+
+```python
+from moke import analizadorMOKE, detectar_dominio, leer_gris
+filas = analizadorMOKE("background.png", "evolucion_dominio",
+                       escala=75, unidad="nm")           # carpeta completa
+img = leer_gris("evolucion_dominio/10.png")
+fondo = leer_gris("evolucion_dominio/background.png")
+res = detectar_dominio(img, referencia=fondo)            # una imagen
+res["radio"], res["centro"], res["area"], res["contraste"]
+```
+
+Los resultados quedan en `resultados/`: una figura `dominio_<n>.png` por
+imagen, con el contorno y el círculo ajustado, y la tabla `medidas_moke.csv`
+con la evolución del dominio cuadro a cuadro.
+
+Documentación completa: [docs/moke.md](docs/moke.md).
+
 ## Módulo TEM
 Carga y preprocesamiento de imágenes TEM (`src/tem/`): lee `.tif`,
 `.tiff`, `.jpg`, `.png`, `.dm3` y `.mrc`, normaliza a [0, 1] por

@@ -23,10 +23,14 @@ from .poblaciones import actividad, normalizar_por_fila, nucleos_y_pozos, paisaj
 # Cadena completa
 from .segmentacion import procesar_region, segmentar_roi
 
+# Resultados: figura coloreada y archivos junto a la ROI
+from .resultados import colorear, segmentar_y_guardar
+
 __all__ = [
     "actividad",
     "actividad_sin_cruzar",
     "aislar_region",
+    "colorear",
     "cortes_por_valles",
     "estimar_degrade",
     "filtro_choque",
@@ -40,5 +44,6 @@ __all__ = [
     "realzar",
     "regiones_de_analisis",
     "segmentar_roi",
+    "segmentar_y_guardar",
     "zonas_por_gris",
 ]

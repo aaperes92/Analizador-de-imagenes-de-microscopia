@@ -58,6 +58,7 @@ src/sem/
         realce.py         degradé, máscara de enfoque, filtro de choque (solo y con pozos)
         poblaciones.py    paisaje gris × actividad, núcleos y pozos
         segmentacion.py   la cadena completa: segmentar_roi
+        resultados.py     imagen coloreada y archivos junto a la ROI: segmentar_y_guardar
 scripts/
     sem_carga.py              script de línea de comandos para la carga
     sem_bse_segmentacion.py   script de línea de comandos para la segmentación BSE
@@ -326,7 +327,18 @@ uv run python scripts/sem_bse_segmentacion.py <ruta_roi.npy> [--intensidad-pozos
 ```
 
 Guarda, junto a la ROI, `segmentacion_<nombre>.npy` (etiqueta de cada píxel), `.csv` (tabla de
-poblaciones) y `.png` (ROI suavizada y segmentada lado a lado).
+poblaciones) y `.png` (ROI suavizada y segmentada lado a lado). El script solo lee los argumentos y
+llama a `sem.bse.segmentar_y_guardar(ruta_roi, intensidad_pozos)`
+([`src/sem/bse/resultados.py`](../src/sem/bse/resultados.py)), que también usa la interfaz.
+
+Desde la **interfaz gráfica** (`uv run python main.py`, técnica SEM) hay dos modos:
+
+- **Imagen y ROI**: se elige una imagen `.tif`; se carga (metadata y recorte de la barra de datos),
+  se abre directamente el selector de ROI, la ROI se guarda en `data/sem/roi/` y se segmenta. La
+  figura de la segmentación se abre en una ventana aparte. Opciones: sufijo de la ROI e intensidad
+  de pozos.
+- **ROIs guardadas**: se elige una carpeta y se segmentan todas las `roi_*.npy` que haya adentro,
+  también en subcarpetas, sin abrir ventanas. Si una ROI falla, se sigue con la siguiente.
 
 Desde Python, toda la cadena se aplica en seguidilla con una sola función:
 
