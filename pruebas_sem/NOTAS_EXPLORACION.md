@@ -149,6 +149,51 @@ Simuladas: burbujas y gusanos de 5 poblaciones, patrón tipo ROI 1, laberinto co
 3. Halos de la máscara de enfoque en lo negro (ignorados por ahora).
 4. Las regiones 1, 2 y 3 de la ROI 3 deberían mostrar patrón; hoy quedan como una población.
 
-## Próximo paso acordado
-Simulada con una matriz y **dos patrones oscuros de distinta intensidad** (tres fases mezcladas),
-con y sin degradé, para ver si variante c + persistencia encuentra las tres fases.
+## 6. Prueba de tres fases (24/11)
+
+Script: `pruebas_sem/scripts/tres_fases_variante_c_persistencia.py`; figuras:
+`pruebas_sem/tres_fases/01_tres_fases_{nitida,degrade}.png`.
+Simulada: matriz 0.70 (67 %), patrón A = laberinto conectado 0.60 (29 %), patrón B = gusanos
+0.52 (4 %). Proceso: suavizar → variante c → persistencia en el paisaje (actividad σ = 3 px) →
+cada píxel a la población de gris más cercano.
+
+| Versión | Reales encontradas | Falsas | Acierto por píxel (B / A / matriz) |
+|---|---|---|---|
+| nítida, sin variante c | 3/3 | 0 | 99 / 100 / 100 % |
+| nítida, con variante c | 3/3 | 3 | 98 / 97 / 99 % |
+| degradé, sin variante c | 1/3 | 7 | 56 / 97 / 77 % |
+| degradé, con variante c | 2/3 | 4 | 75 / 92 / 94 % |
+
+- Con degradé, la variante c convierte la nube diagonal en **columnas** (patrón A y matriz).
+- El patrón B no aparece: es escaso y fino.
+- El filtro de choque **crea escalones de gris intermedio** que la persistencia toma como
+  poblaciones falsas (también en la nítida).
+
+### Observaciones de Mauricio sobre esta prueba
+1. **La simulada no es un buen ejemplo**: el patrón B es muy chico y escaso, no tiene presencia.
+   La próxima debe tener los dos patrones oscuros con presencia real (≈ 15-30 % cada uno, como la
+   fase oscura de la ROI 1).
+2. El resultado **toma más fase de la que es** y las fases **se mezclan entre sí**.
+3. **Buscar regiones con área en el paisaje, no líneas.** Con degradé ninguna población es una línea
+   fina; cada una es una zona con área. Las columnas falsas del filtro de choque son cortas y de
+   poca área: medir cuántos píxeles cubre cada zona del paisaje las separaría mejor que contar
+   filas con picos.
+4. **La línea de la matriz tiene mucha fuerza**: separa, pero acerca las demás hacia ella. Es por
+   su masa (67 % de los píxeles): domina el paisaje, la asignación por "gris más cercano" corre
+   los bordes hacia ella y el filtro de choque empuja más hacia el lado con más masa. Ideas:
+   normalizar cada fila del paisaje para que la matriz no pese más, o asignar los píxeles según la
+   zona del paisaje donde caen y no por distancia en gris.
+5. En la ROI 3, las regiones 1, 2 y 3 deberían mostrar patrón; el criterio de decisión tiene que
+   depender de la región (no siempre hay valle). Los halos de la máscara de enfoque se ignoran por
+   ahora.
+
+## Próximos pasos acordados
+1. Nueva simulada de tres fases con **dos patrones oscuros de distinta intensidad y con presencia
+   real**, mezclados, con y sin degradé.
+2. Detectar poblaciones como **regiones con área en el paisaje** (no líneas), compensando el peso
+   de la matriz; asignar los píxeles por zona del paisaje.
+3. Si funciona, probar en las ROIs 1 y 3 reales, por región.
+4. Más adelante: ordenar, documentar (`docs/sem.md`) y pasar a funciones en `src/sem/`, volviendo a
+   empezar desde la imagen suavizada, una función por vez.
+
+Para retomar en una sesión nueva: leer este archivo y el `CLAUDE.md`.
