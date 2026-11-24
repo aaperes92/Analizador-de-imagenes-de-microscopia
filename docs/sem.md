@@ -11,10 +11,14 @@ El módulo `sem` trabaja con imágenes de microscopía electrónica de barrido (
 2. **[Suavizado](#suavizado)**: reduce el ruido de la ROI preservando los bordes entre fases,
    con parámetros que se fijan automáticamente a partir de la imagen.
    Código: [`src/sem/suavizado.py`](../src/sem/suavizado.py).
+3. **[Segmentación BSE](#segmentación-bse)** (solo electrones retrodispersados): divide la ROI
+   en regiones de análisis y, dentro de cada una, encuentra las poblaciones (fases) y asigna
+   cada píxel a una. Código: subpaquete [`src/sem/bse/`](../src/sem/bse/).
 
-Desde la etapa 2, el procesamiento está pensado para imágenes de **electrones retrodispersados
-(BSE)**, donde cada fase aparece como una población de intensidad. Las imágenes de electrones
-secundarios (SE) requieren un análisis distinto, todavía no implementado.
+La carga y el suavizado sirven para BSE y SE. Desde la segmentación, el procesamiento es **solo
+para imágenes de electrones retrodispersados (BSE)**, donde cada fase aparece como una población
+de intensidad; por eso vive en el subpaquete `sem.bse`. Las imágenes de electrones secundarios
+(SE), donde el gris refleja el relieve, requieren un análisis distinto, todavía no implementado.
 
 Al final hay un [glosario](#glosario) con los términos técnicos.
 
@@ -45,13 +49,21 @@ El módulo no usa OpenCV.
 
 ```
 src/sem/
-    __init__.py           expone las funciones públicas del módulo
-    carga.py              lectura, metadata, barra de datos y ROI
-    suavizado.py          estimación del ruido y suavizado non-local means
+    __init__.py           expone las funciones públicas de carga y suavizado
+    carga.py              lectura, metadata, barra de datos y ROI (BSE y SE)
+    suavizado.py          estimación del ruido y suavizado non-local means (BSE y SE)
+    bse/                  segmentación, solo electrones retrodispersados
+        __init__.py       expone las funciones públicas de la segmentación BSE
+        regiones.py       regiones de análisis: zonas por gris, franja de borde, actividad
+        realce.py         degradé, máscara de enfoque, filtro de choque (solo y con pozos)
+        poblaciones.py    paisaje gris × actividad, núcleos y pozos
+        segmentacion.py   la cadena completa: segmentar_roi
 scripts/
-    sem_carga.py          script de línea de comandos para la carga
-notebooks/
-    sem_suavizado.ipynb   prueba del suavizado sobre ROIs reales, paso a paso
+    sem_carga.py              script de línea de comandos para la carga
+    sem_bse_segmentacion.py   script de línea de comandos para la segmentación BSE
+tests/sem/
+    test_bse.py           tests de la segmentación BSE con imágenes simuladas
+pruebas_sem/              exploración: notas, scripts y figuras de las pruebas
 data/sem/roi/             ROIs guardadas (no se versionan en git)
 ```
 
@@ -62,6 +74,7 @@ import sys
 sys.path.insert(0, "src")          # desde la raíz del proyecto
 
 from sem import cargar_imagen, leer_metadata, recortar_barra_datos
+from sem.bse import segmentar_roi   # segmentación, solo BSE
 ```
 
 Todas las funciones tienen docstring con sus parámetros, retorno y errores: esa es la
@@ -232,9 +245,6 @@ roi = np.load("data/sem/roi/BSE_1/BSE_1_1/roi_BSE_1_1.npy")
 roi_suave = suavizar(roi)          # todos los parámetros se fijan automáticamente
 ```
 
-El notebook [`notebooks/sem_suavizado.ipynb`](../notebooks/sem_suavizado.ipynb) recorre el
-proceso paso a paso sobre las ROIs de una imagen, con figuras e histogramas de antes y después.
-
 ### Funcionamiento
 
 El suavizado usa **non-local means** (`skimage.restoration.denoise_nl_means`). Para cada
@@ -296,8 +306,156 @@ parte de la imagen, lo quitado tiene forma y la autocorrelación sube.
 Con las ROIs de prueba, 5×5 dio la menor autocorrelación en todas; 3×3 se lleva parte de la
 microestructura. La autocorrelación horizontal sale siempre algo mayor que la vertical por el
 barrido del haz, que hace que el ruido de una misma fila esté algo relacionado. Para imágenes muy
-distintas (otra magnificación u otro equipo) conviene repetir esta prueba, que está en el anexo
-del notebook.
+distintas (otra magnificación u otro equipo) conviene repetir esta prueba.
+
+---
+
+## Segmentación BSE
+
+**Solo para imágenes de electrones retrodispersados (BSE).** En BSE el gris de cada píxel indica
+la composición: cada fase tiene un gris propio y forma una **población**. La segmentación busca
+esas poblaciones y asigna cada píxel a una, sin que haya que decir cuántas hay y sin exigir que el
+histograma de gris tenga un valle entre ellas (en las ROIs reales, el desenfoque suele borrarlo).
+
+### Uso
+
+Desde la línea de comandos, sobre una ROI guardada por la carga:
+
+```bash
+uv run python scripts/sem_bse_segmentacion.py <ruta_roi.npy> [--intensidad-pozos 2]
+```
+
+Guarda, junto a la ROI, `segmentacion_<nombre>.npy` (etiqueta de cada píxel), `.csv` (tabla de
+poblaciones) y `.png` (ROI suavizada y segmentada lado a lado).
+
+Desde Python, toda la cadena se aplica en seguidilla con una sola función:
+
+```python
+import numpy as np
+from sem.bse import segmentar_roi
+
+roi = np.load("data/sem/roi/BSE_1/BSE_1_3/roi_BSE_1_3.npy")
+s = segmentar_roi(roi)             # suaviza, divide en regiones y busca las poblaciones
+s["etiquetas"]                     # etiqueta de cada píxel (una por par región-población)
+s["tabla"]                         # región, población, gris central y fracciones
+```
+
+### La cadena
+
+`segmentar_roi` ([`segmentacion.py`](../src/sem/bse/segmentacion.py)) aplica, en orden:
+
+| Paso | Operación | Función | Módulo |
+|---|---|---|---|
+| 1 | Suavizado non-local means | `suavizar` | `sem.suavizado` |
+| 2 | Regiones de análisis | `regiones_de_analisis` | `sem.bse.regiones` |
+| 3 | Aislar cada región | `aislar_region` | `sem.bse.regiones` |
+| 4 | Ruido y degradé de la región | `estimar_ruido`, `estimar_degrade` | `sem.suavizado`, `sem.bse.realce` |
+| 5 | Realce (máscara de enfoque) | `realzar` | `sem.bse.realce` |
+| 6 | Actividad de partida (σ = 3 px) | `actividad` | `sem.bse.poblaciones` |
+| 7 | Filtro de choque con pozos | `filtro_choque_con_pozos` | `sem.bse.realce` |
+| 8 | Paisaje, núcleos y pozos → poblaciones | `poblaciones_de_region` | `sem.bse.poblaciones` |
+| 9 | La franja de borde toma la etiqueta del vecino más cercano | — | `sem.bse.segmentacion` |
+
+Los pasos 3 a 8 se hacen **por separado en cada región** (`procesar_region`).
+
+### Regiones de análisis — `regiones.py`
+
+Una ROI puede tener zonas con comportamientos muy distintos (una franja negra, una zona lisa,
+una zona con patrón). Si se buscan poblaciones en toda la ROI a la vez, las zonas grandes o de
+mucho contraste dominan y tapan a las demás. Por eso primero se divide en regiones:
+
+1. **Zonas por gris** (`zonas_por_gris`): cortes en los valles del histograma de gris
+   (`cortes_por_valles`, con los criterios del módulo TEM: prominencia 5 %, distancia 8 casillas,
+   masa 1 %, valle < 75 % del pico menor). Las manchitas de menos del 1 % del área pasan a la zona
+   vecina.
+2. **Franja de borde** (`franja_de_borde`): los píxeles de transición entre zonas. Su ancho sale de
+   la imagen: es la distancia a la que el gris recorre el 90 % del camino hasta su valor interior.
+3. **Actividad sin cruzar límites** (`actividad_sin_cruzar`): promedio del gradiente con σ = 25 px,
+   usando solo píxeles de la misma zona y fuera de la franja.
+4. **Clases de actividad**: dentro de cada zona, cortes en los valles del histograma de actividad.
+
+Cada región se **aísla** (`aislar_region`) antes de procesarla: se recorta y todo lo que queda
+fuera de ella se reemplaza por el píxel más cercano de la región. Así el realce, el choque y la
+actividad no ven el gris ni los bordes de las otras regiones.
+
+### Realce — `realce.py`
+
+El desenfoque del microscopio mezcla el gris de dos fases alrededor de cada borde (**degradé**).
+En las estructuras finas, ningún píxel llega a su gris propio. El realce lo deshace en parte:
+
+- **`estimar_degrade`**: ancho del degradé como σ de una gaussiana. Mide el ancho 10-90 % de
+  bordes aislados (perfil monótono con mesetas lejos del borde) y lo divide por 2.563. Si hay
+  menos de 10 bordes aislados, devuelve 1.0 px (valor fijo, no una estimación).
+- **`realzar`**: máscara de enfoque con radio igual al degradé y cantidad 1.
+- **`filtro_choque`**: filtro de choque de Osher y Rudin. Cada píxel se mueve hacia el gris del
+  lado del borde al que pertenece, según el signo de la segunda derivada en la dirección del
+  gradiente; el degradé se parte en dos y quedan mesetas. Frena cuando el cambio medio es menor
+  que 0.1 × ruido.
+- **`filtro_choque_con_pozos`**: primero el choque solo, hasta que frena; después le suma una
+  atracción hacia el gris central del pozo de cada píxel, pesada por la densidad del paisaje en su
+  casilla. Cada masa del paisaje tiende a una línea vertical (el mismo gris en el interior y en el
+  borde). Se activa recién cuando el choque frenó: antes, el paisaje de una imagen con degradé
+  tiene un solo pozo y la atracción comprimiría todos los grises.
+
+### Poblaciones — `poblaciones.py`
+
+1. **`actividad`**: promedio del gradiente con σ = 3 px (del orden del espesor de lo más fino),
+   calculado sobre la imagen **de partida**. Separa el interior de una estructura (actividad baja)
+   de su borde (alta). Se usa la de partida porque el choque afila los bordes y subiría la
+   actividad de todas las fases por igual.
+2. **`paisaje`**: histograma conjunto gris × actividad (128 × 128 casillas). Cada población forma
+   una masa; con bordes nítidos, una línea vertical.
+3. **`normalizar_por_fila`**: cada fila dividida por su máximo, para que cada nivel de actividad
+   pese lo mismo y una fase con mucha masa no tape a las demás.
+4. **`nucleos_y_pozos`**:
+   - **núcleo**: casillas sobre la media altura de su fila, conexas, con al menos el 1 % de los
+     píxeles. **Cada núcleo es una población**: dice cuántas hay y da su gris central (mediana de
+     sus píxeles);
+   - **pozo**: lo que se inunda (watershed) desde cada núcleo; la frontera entre pozos queda donde
+     hay menos píxeles. **Cada píxel toma la población del pozo en el que cae.**
+5. **`poblaciones_de_region`**: une los pasos anteriores y numera las poblaciones por gris (0 = la
+   más oscura).
+
+### Parámetros
+
+| Parámetro | Valor | ¿Sale de la imagen? |
+|---|---|---|
+| ruido (por región) | — | sí (`estimar_ruido`) |
+| degradé (por región) | — | sí, si hay ≥ 10 bordes aislados; si no, 1.0 px fijo |
+| ancho de la franja de borde | — | sí |
+| fin del filtro de choque | cambio < 0.1 × ruido | sí |
+| criterios de picos y valles | 5 %, 8 casillas, 1 %, 75 % | no (vienen de TEM) |
+| σ de la actividad | 25 px (regiones), 3 px (paisaje) | no |
+| cantidad del realce | 1 | no |
+| σ interno del choque | 1 px | no |
+| intensidad de los pozos | 2 | no |
+| núcleo: media altura y masa mínima | 0.5 y 1 % | no |
+
+Los parámetros que no salen de la imagen son argumentos con esos valores por defecto. Falta
+trabajar criterios objetivos para fijarlos.
+
+### Resultados en las ROIs de prueba
+
+| ROI | Regiones | Poblaciones |
+|---|---|---|
+| BSE_1_1 (todo patrón) | 1 | 2: grises 0.549 y 0.718; fase oscura 25 % |
+| BSE_1_3 (patrón, zona lisa, franja negra, zona gris) | 4 | patrón: 2 (0.559 y 0.692; fase oscura 19 %); las otras tres, 1 cada una |
+
+### Limitaciones conocidas
+
+- **Fases con un valle claro en el gris.** Si dos fases tienen un valle marcado en el histograma
+  (imagen de mucho contraste), `zonas_por_gris` las separa como si fueran zonas y las clases de
+  actividad se fragmentan. En las ROIs reales no pasa; en simuladas de alto contraste sí (hay dos
+  tests marcados como falla conocida en `tests/sem/test_bse.py`).
+- **Zona lisa de BSE_1_3.** Su paisaje tiene forma de V: dos ramas (estrías oscuras y fondo
+  claro) que se tocan con actividad baja. La media altura las toma como un solo núcleo, así que
+  sale una sola población aunque probablemente haya dos.
+- **Degradé en regiones lisas o chicas.** Con pocos bordes aislados se usa el valor fijo de 1 px.
+- **Normalización por fila en regiones chicas.** Con pocos píxeles, algunas filas quedan casi
+  vacías y la normalización las infla.
+
+La exploración que llevó a este método (lo probado, lo descartado y por qué) está en
+[`pruebas_sem/NOTAS_EXPLORACION.md`](../pruebas_sem/NOTAS_EXPLORACION.md).
 
 ---
 
@@ -317,4 +475,12 @@ del notebook.
 | **Non-local means** | Filtro que promedia píxeles cuyos vecindarios (parches) se parecen, aunque estén lejos |
 | **Criterio de discrepancia** | Regla para fijar la intensidad de un filtro: lo quitado debe tener la desviación estándar del ruido |
 | **Autocorrelación** | Correlación de una imagen consigo misma corrida unos píxeles; mide si los vecinos se parecen |
+| **Degradé** | Mezcla de grises en la franja alrededor de un borde, causada por el desenfoque; borra el gris propio de las estructuras finas |
+| **Región de análisis** | Parte de la ROI que se procesa por separado (zona de gris × clase de actividad) |
+| **Franja de borde** | Píxeles de transición entre dos zonas de gris; no pertenecen a ninguna región |
+| **Actividad** | Promedio local del gradiente: cuántos bordes hay alrededor de un píxel |
+| **Paisaje gris × actividad** | Histograma conjunto: cuántos píxeles hay con cada par (gris, actividad) |
+| **Núcleo** | Parte más densa de una masa del paisaje; cada núcleo es una población y da su gris central |
+| **Pozo** | Todo lo que se inunda desde un núcleo; decide a qué población va cada píxel |
+| **Filtro de choque** | Filtro que lleva cada píxel al gris del lado del borde al que pertenece y deja mesetas |
 | **Backend de matplotlib** | Motor que dibuja las figuras; uno "con ventanas" (TkAgg, QtAgg) es necesario para las herramientas interactivas |

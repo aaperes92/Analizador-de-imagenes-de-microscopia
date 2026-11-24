@@ -1,4 +1,8 @@
-"""Módulo SEM del Analizador de Imágenes de Microscopía."""
+"""Módulo SEM del Analizador de Imágenes de Microscopía.
+
+La carga y el suavizado sirven para imágenes BSE y SE. La segmentación de imágenes de electrones
+retrodispersados está en el subpaquete `sem.bse` (solo BSE).
+"""
 
 # Carga: lectura, metadata, barra de datos y ROI
 from .carga import (
