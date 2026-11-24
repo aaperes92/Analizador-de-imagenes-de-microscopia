@@ -83,3 +83,33 @@ son patrones de difracción): `uv run python scripts/analizar_tem.py
 "RUTA"`; con `--difraccion` se fuerza el análisis de difracción.
 
 Documentación completa: [docs/tem.md](docs/tem.md).
+
+## Módulo SEM
+Carga, suavizado y segmentación de imágenes SEM (`src/sem/`). La carga
+lee el `.tif` del microscopio con su metadata (FEI, Zeiss o EXIF), quita
+la barra de datos y permite seleccionar y guardar una región de interés
+(ROI). El suavizado reduce el ruido con non-local means, con parámetros
+que se fijan automáticamente a partir de la imagen. Carga y suavizado
+sirven para imágenes BSE y SE.
+
+La segmentación es **solo para imágenes de electrones retrodispersados
+(BSE)** (`src/sem/bse/`): divide la ROI en regiones de análisis y, en
+cada una, encuentra las poblaciones (fases) sin necesidad de decir
+cuántas hay ni de que el histograma tenga un valle entre ellas. Para
+eso estima el desenfoque de los bordes, realza la imagen, aplica un
+filtro de choque que devuelve a cada píxel el gris de su fase, y separa
+las poblaciones en el paisaje gris × actividad.
+
+```bash
+uv run python scripts/sem_carga.py imagenes/SEM/BSE/BSE_1.tif                       # carga y ROI
+uv run python scripts/sem_bse_segmentacion.py data/sem/roi/BSE_1/BSE_1_1/roi_BSE_1_1.npy   # segmentación BSE
+```
+
+```python
+from sem import suavizar            # BSE y SE
+from sem.bse import segmentar_roi   # solo BSE
+s = segmentar_roi(roi)              # suavizado, regiones y poblaciones
+s["etiquetas"], s["tabla"]          # etiqueta de cada píxel y tabla de poblaciones
+```
+
+Documentación completa: [docs/sem.md](docs/sem.md).
