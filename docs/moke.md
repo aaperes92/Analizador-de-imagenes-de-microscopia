@@ -27,8 +27,8 @@ apertura del microscopio:
 6. **[Contorno y círculo](#paso-6--contorno-y-círculo-ajustado)**:
    extrae el borde y ajusta un círculo por mínimos cuadrados.
 
-Código: [`moke.py`](../moke.py). Se llama desde
-[`main.py`](../main.py).
+Código: [`src/moke/moke.py`](../src/moke/moke.py). Se usa desde la interfaz
+gráfica ([`main.py`](../main.py)).
 
 ---
 
@@ -45,39 +45,50 @@ El módulo solo necesita `numpy`, `scipy`, `scikit-image` y
 
 ## Uso rápido
 
-Desde la raíz del proyecto:
+Desde la raíz del proyecto se abre la interfaz gráfica:
 
 ```bash
-uv run python main.py moke background.png evolucion_dominio --escala 75 --unidad nm
+uv run python main.py
 ```
 
-| Argumento | Significado |
-|---|---|
-| `moke` | técnica |
-| `background.png` | imagen de fondo: un nombre dentro de la carpeta o una ruta |
-| `evolucion_dominio` | carpeta con las imágenes `0.png`, `1.png`, `2.png`, … |
-| `--escala` | tamaño físico de un píxel (por defecto 1) |
-| `--unidad` | unidad de `--escala` (por defecto `px`) |
+1. Elegí la técnica **MOKE**.
+2. **Carpeta**: la carpeta con las imágenes `0.png`, `1.png`, `2.png`, …
+   (botón "Elegir carpeta…").
+3. **Fondo**: la imagen de fondo, dentro o fuera de esa carpeta (botón
+   "Elegir archivo…").
+4. **Escala**: tamaño físico de un píxel (por defecto 1) y **Unidad**
+   (por defecto `px`), por ejemplo `75` y `nm`.
+5. **Analizar**. El registro muestra el avance (`[3/10] 8.png`), los
+   avisos y la carpeta de resultados.
 
-Los resultados quedan en `resultados/`: una figura
-`dominio_<n>.png` por imagen y la tabla `medidas_moke.csv`.
+Los resultados quedan en `resultados/` (en la raíz del proyecto): una
+figura `dominio_<n>.png` por imagen y la tabla `medidas_moke.csv`. Como
+siempre se analiza una carpeta, las figuras se guardan sin abrir
+ventanas.
 
 Desde Python, con más control:
 
 ```python
-import moke
+import sys
+sys.path.insert(0, "src")  # para poder importar el módulo moke
 
-filas = moke.analizadorMOKE("background.png", "evolucion_dominio",
-                            salida="resultados", escala=75, unidad="nm",
-                            graficar=False)
+from moke import analizadorMOKE, detectar_dominio, leer_gris, mostrar_dominio
+
+filas = analizadorMOKE("background.png", "evolucion_dominio",
+                       salida="resultados", escala=75, unidad="nm",
+                       graficar=False)
 
 # Una sola imagen
-img = moke.leer_gris("evolucion_dominio/10.png")
-fondo = moke.leer_gris("evolucion_dominio/background.png")
-res = moke.detectar_dominio(img, referencia=fondo)
+img = leer_gris("evolucion_dominio/10.png")
+fondo = leer_gris("evolucion_dominio/background.png")
+res = detectar_dominio(img, referencia=fondo)
 res["radio"], res["centro"], res["contraste"]
-moke.mostrar_dominio(img, res)
+mostrar_dominio(img, res)
 ```
+
+Tests: [`tests/interfaz/test_tecnicas.py`](../tests/interfaz/test_tecnicas.py)
+corre `analizadorMOKE` desde la interfaz con imágenes sintéticas
+(`uv run pytest`).
 
 ## Requisitos de las imágenes
 
@@ -108,7 +119,7 @@ y se dividen por 4 internamente; el contorno y el área se devuelven en
 píxeles originales.
 
 > **Dos "escalas" distintas.** En `detectar_dominio`, `escala` es el
-> factor de reducción (4). En `analizadorMOKE` y `main.py`, `escala` es
+> factor de reducción (4). En `analizadorMOKE` y en la interfaz, `escala` es
 > la calibración física (nm/px, µm/px). No tienen relación.
 
 ### Paso 1 — Carga de las imágenes
@@ -286,6 +297,7 @@ Analiza todas las imágenes numeradas de una carpeta.
 - **graficar**: si es `True`, abre cada figura con `plt.show()` (además
   de guardarla).
 - **Devuelve**: las filas de la tabla (la primera es el encabezado).
+- Imprime el avance, `[i/N] <archivo>`, antes de cada imagen.
 - Si una imagen da `ValueError`, imprime el motivo y sigue con la
   siguiente (esa imagen no aparece en la tabla).
 - **Errores**: `NotADirectoryError` si no existe la carpeta,
@@ -313,7 +325,7 @@ imagen `<n>`.
 
 ## Parámetros ajustables
 
-Son argumentos de `detectar_dominio` (desde `main.py` se usan los
+Son argumentos de `detectar_dominio` (desde la interfaz se usan los
 valores por defecto):
 
 | Parámetro | Valor | Qué controla |
@@ -410,9 +422,9 @@ Tarda ~1.4 s por imagen.
   apertura y el cierre.
 - **El ruido se mide sobre la imagen suavizada**, así que es menor que el
   ruido por píxel: el criterio de 3 × ruido es permisivo.
-- **Detalles menores**: con `--unidad px` la tabla tiene dos columnas
+- **Detalles menores**: con la unidad `px` la tabla tiene dos columnas
   `radio_px`; los parámetros de detección no se pueden cambiar desde
-  `main.py`.
+  la interfaz.
 - **Próximos pasos**: velocidad de la pared (radio vs. tiempo, con el
   intervalo entre cuadros), una columna `toca_borde` en la tabla,
   descartar automáticamente las imágenes sin dominio, y tests en

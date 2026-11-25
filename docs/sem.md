@@ -58,6 +58,7 @@ src/sem/
         realce.py         degradé, máscara de enfoque, filtro de choque (solo y con pozos)
         poblaciones.py    paisaje gris × actividad, núcleos y pozos
         segmentacion.py   la cadena completa: segmentar_roi
+        resultados.py     imagen coloreada y archivos junto a la ROI: segmentar_y_guardar
 scripts/
     sem_carga.py              script de línea de comandos para la carga
     sem_bse_segmentacion.py   script de línea de comandos para la segmentación BSE
@@ -326,7 +327,18 @@ uv run python scripts/sem_bse_segmentacion.py <ruta_roi.npy> [--intensidad-pozos
 ```
 
 Guarda, junto a la ROI, `segmentacion_<nombre>.npy` (etiqueta de cada píxel), `.csv` (tabla de
-poblaciones) y `.png` (ROI suavizada y segmentada lado a lado).
+poblaciones) y `.png` (ROI suavizada y segmentada lado a lado). El script solo lee los argumentos y
+llama a `sem.bse.segmentar_y_guardar(ruta_roi, intensidad_pozos)`
+([`src/sem/bse/resultados.py`](../src/sem/bse/resultados.py)), que también usa la interfaz.
+
+Desde la **interfaz gráfica** (`uv run python main.py`, técnica SEM) hay dos modos:
+
+- **Imagen y ROI**: se elige una imagen `.tif`; se carga (metadata y recorte de la barra de datos),
+  se abre directamente el selector de ROI, la ROI se guarda en `data/sem/roi/` y se segmenta. La
+  figura de la segmentación se abre en una ventana aparte. Opciones: sufijo de la ROI e intensidad
+  de pozos.
+- **ROIs guardadas**: se elige una carpeta y se segmentan todas las `roi_*.npy` que haya adentro,
+  también en subcarpetas, sin abrir ventanas. Si una ROI falla, se sigue con la siguiente.
 
 Desde Python, toda la cadena se aplica en seguidilla con una sola función:
 
@@ -357,6 +369,174 @@ s["tabla"]                         # región, población, gris central y fraccio
 | 9 | La franja de borde toma la etiqueta del vecino más cercano | — | `sem.bse.segmentacion` |
 
 Los pasos 3 a 8 se hacen **por separado en cada región** (`procesar_region`).
+
+El filtro de choque se aplica **una sola vez**. `filtro_choque_con_pozos` trabaja en dos etapas
+seguidas sobre la misma imagen: primero el choque solo (reutiliza `filtro_choque`) hasta que deja
+de cambiar, y desde ese punto, sin volver a empezar, el choque con la atracción hacia los pozos.
+Con `intensidad_pozos=0` queda solo la primera etapa.
+
+### Resumen del procesamiento
+
+Sea cual sea la ROI BSE, después del suavizado se procesa así:
+
+1. **Se divide en regiones de análisis**, partes de la ROI que se comportan distinto (por gris y
+   por cantidad de bordes). Una ROI homogénea queda como una sola región.
+2. **Cada región se aísla** del resto, para que sus características no se mezclen con las de las
+   demás.
+3. **En cada región se recupera el gris propio de cada fase**: se estima cuánto desenfoque hay en
+   sus bordes, se realza y se aplica el filtro de choque con pozos, que lleva cada píxel al gris de
+   la fase a la que pertenece.
+4. **En cada región se buscan las poblaciones** en el paisaje gris × actividad: los núcleos dicen
+   cuántas hay y su gris; los pozos dicen a cuál va cada píxel.
+5. **Se arma el resultado**: una etiqueta por par (región, población), con su gris central y su
+   fracción de área.
+
+### Funciones y su justificación
+
+Para cada función: qué hace, por qué se hace así y qué puede decidir el usuario.
+
+#### `segmentar_roi(roi, suavizada=False, intensidad_pozos=2.0)`
+
+- **Qué hace:** aplica toda la cadena a una ROI y devuelve las etiquetas, la tabla de poblaciones
+  y los resultados intermedios de cada región.
+- **Por qué:** el orden de las operaciones importa (cada una prepara la entrada de la siguiente);
+  una sola función evita aplicarlas en otro orden o saltear alguna.
+- **El usuario decide:** si la ROI ya está suavizada (para no suavizar dos veces) y el peso de la
+  atracción hacia los pozos (0 = choque solo).
+
+#### `procesar_region(suavizada, mascara, intensidad_pozos=2.0)`
+
+- **Qué hace:** aísla una región y le aplica, solo a ella, la estimación de ruido y degradé, el
+  realce, la actividad, el choque con pozos y la búsqueda de poblaciones.
+- **Por qué:** cada región tiene su propio ruido, su propio desenfoque y sus propias fases. Si se
+  procesa toda la ROI junta, una zona muy contrastada (por ejemplo, una franja negra) domina la
+  estimación del degradé, el realce y el paisaje, y tapa las fases de las zonas suaves.
+- **El usuario decide:** la región (cualquier máscara, no solo las de `regiones_de_analisis`).
+
+#### `regiones_de_analisis(imagen, sigma_actividad=25)`
+
+- **Qué hace:** divide la ROI en zonas por gris y, dentro de cada zona, en clases de actividad.
+  Devuelve la región de cada píxel y la franja de borde.
+- **Por qué:** en una misma ROI puede haber zonas de composición distinta (gris distinto) y zonas
+  de igual gris pero distinta textura (lisa o con patrón). Las dos cosas cambian qué poblaciones
+  hay, así que se separan antes de buscarlas.
+- **El usuario decide:** la escala de la actividad. Grande (25 px) mide zonas enteras, no bordes
+  individuales.
+
+#### `cortes_por_valles(valores, ...)`
+
+- **Qué hace:** encuentra los cortes entre los picos reales de un histograma.
+- **Por qué:** un histograma real tiene picos chicos de ruido. Exigir prominencia, masa mínima y
+  un valle profundo entre picos evita cortar donde no hay dos grupos distintos.
+- **El usuario decide:** los criterios (prominencia, distancia, masa y profundidad del valle).
+
+#### `zonas_por_gris(gris, area_minima=0.01)`
+
+- **Qué hace:** asigna cada píxel a una zona según los cortes del histograma de gris, y pasa las
+  manchitas chicas a la zona vecina.
+- **Por qué:** una zona de análisis tiene que ser una parte extensa de la ROI; una mancha aislada
+  de otro gris es un detalle de la zona que la rodea, no una zona aparte.
+- **El usuario decide:** el área mínima de una mancha para conservar su zona.
+
+#### `franja_de_borde(gris, zonas)`
+
+- **Qué hace:** marca los píxeles de transición entre zonas.
+- **Por qué:** por el desenfoque, los píxeles junto al límite entre dos zonas tienen un gris
+  intermedio que no es de ninguna. Si se los incluyera, aparecerían como una población falsa. Su
+  ancho se mide en la propia imagen, porque depende del desenfoque de cada adquisición.
+
+#### `actividad_sin_cruzar(imagen, zonas, borde, sigma=25)`
+
+- **Qué hace:** promedia el gradiente de cada zona usando solo píxeles de esa zona.
+- **Por qué:** el salto de gris entre dos zonas no es textura de ninguna de ellas. Si se lo
+  promediara, el límite entre zonas aparecería como una región de mucha actividad.
+
+#### `aislar_region(imagen, mascara, margen=20)`
+
+- **Qué hace:** recorta la región y reemplaza lo que queda fuera de ella por el píxel más cercano
+  de la región.
+- **Por qué:** los filtros miran el vecindario de cada píxel. En el límite de una región, ese
+  vecindario incluye píxeles de otras regiones; al reemplazarlos, la región se procesa como si
+  continuara con sus propios valores.
+
+#### `estimar_degrade(imagen, mascara=None)`
+
+- **Qué hace:** mide el ancho del desenfoque en los bordes (σ de una gaussiana).
+- **Por qué:** el realce tiene que deshacer exactamente el desenfoque que hay: si se realza con
+  un radio menor no alcanza, y con uno mayor crea halos. Se miden solo bordes aislados porque un
+  borde con otro cerca se ve más angosto o más ancho de lo que es. Con menos de 10 bordes
+  aislados no hay datos suficientes y se usa 1 px.
+- **El usuario decide:** con `mascara`, de qué parte de la imagen se toman los bordes.
+
+#### `realzar(imagen, sigma_degrade, cantidad=1.0)`
+
+- **Qué hace:** máscara de enfoque: suma a la imagen su diferencia con una versión desenfocada.
+- **Por qué:** con radio igual al degradé, lo que se suma es el detalle que el desenfoque borró.
+  Los bordes quedan más empinados y el filtro de choque los puede cortar en el lugar correcto.
+- **El usuario decide:** la cantidad de detalle que se suma.
+
+#### `filtro_choque(imagen, sigma_ruido, sigma_interno=1.0)`
+
+- **Qué hace:** lleva cada píxel de un borde hacia el gris del lado al que pertenece, hasta que
+  quedan mesetas de gris constante separadas por un salto.
+- **Por qué:** en BSE cada fase tiene un gris propio, pero el desenfoque lo mezcla en los bordes y
+  en las estructuras finas. Un filtro lineal (como la deconvolución) amplifica esa mezcla y crea
+  anillos; el choque, en cambio, decide de qué lado está cada píxel y lo manda ahí, así que
+  devuelve mesetas. Se detiene cuando el cambio de un paso ya no se distingue del ruido.
+- **El usuario decide:** la escala con la que se estima la dirección del borde (`sigma_interno`).
+
+#### `filtro_choque_con_pozos(imagen, act, sigma_ruido, intensidad=2.0)`
+
+- **Qué hace:** primero el choque solo; cuando frena, sigue con el choque más una atracción de
+  cada píxel hacia el gris central de su pozo en el paisaje.
+- **Por qué:** después del choque, cada fase forma una masa en el paisaje, pero los píxeles de
+  borde quedan en un gris algo distinto que los del interior (la masa es una mancha y no una
+  línea). La atracción alinea a todos los píxeles de una masa en el mismo gris, en cualquier
+  nivel de actividad, y deja las fases mejor separadas. Empieza recién cuando el choque frenó
+  porque, antes, la imagen desenfocada tiene una sola masa y la atracción juntaría todos los
+  grises.
+- **El usuario decide:** la intensidad de la atracción (0 = choque solo).
+
+#### `actividad(imagen, sigma=3)`
+
+- **Qué hace:** promedio local del gradiente, a la escala de las estructuras más finas.
+- **Por qué:** permite distinguir, para un mismo gris, el interior de una estructura (poca
+  actividad) de su borde (mucha). Es el segundo eje del paisaje. Se calcula sobre la imagen
+  **antes** del choque porque el choque afila todos los bordes y subiría la actividad de todas las
+  fases por igual.
+- **El usuario decide:** la escala (del orden del espesor de lo más fino que se quiere separar).
+
+#### `paisaje(gris, act, bins=128)`
+
+- **Qué hace:** cuenta cuántos píxeles hay con cada par (gris, actividad).
+- **Por qué:** en el histograma de gris solo, las fases finas no forman un pico propio porque sus
+  píxeles están casi todos en bordes. Separando por actividad, cada fase forma una masa propia
+  aunque en el histograma de gris no se vea.
+
+#### `normalizar_por_fila(conteos)`
+
+- **Qué hace:** divide cada fila del paisaje por su máximo.
+- **Por qué:** una fase con mucha área (la matriz) domina el paisaje y tapa a las demás. Dividiendo
+  por fila, cada nivel de actividad pesa lo mismo y una fase escasa pero bien definida se ve tanto
+  como una abundante. Las filas casi vacías se dejan en cero para no amplificar ruido.
+
+#### `nucleos_y_pozos(normalizado, conteos, media_altura=0.5, masa_minima=0.01)`
+
+- **Qué hace:** encuentra los núcleos (partes densas del paisaje con masa suficiente) e inunda el
+  paisaje desde ellos para formar los pozos.
+- **Por qué:** los núcleos responden **cuántas poblaciones hay y qué gris tienen**, sin exigir que
+  haya un valle en el histograma; la masa mínima evita contar como población un grupo de pocos
+  píxeles. Los pozos responden **a qué población va cada píxel**: la frontera entre dos pozos queda
+  donde hay menos píxeles, así que no depende de cómo se escalen los ejes del paisaje.
+- **El usuario decide:** qué fracción de la fila define un núcleo y la masa mínima de una
+  población.
+
+#### `poblaciones_de_region(gris, act)`
+
+- **Qué hace:** une paisaje, normalización, núcleos y pozos, y devuelve la población de cada
+  píxel, el gris central y la fracción de cada una, numeradas de la más oscura a la más clara.
+- **Por qué:** es la unidad que se aplica a cada región; numerar por gris hace que la población 0
+  sea siempre la más oscura, en cualquier región y cualquier ROI.
 
 ### Regiones de análisis — `regiones.py`
 

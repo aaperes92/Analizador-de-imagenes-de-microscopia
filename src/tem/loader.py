@@ -28,7 +28,7 @@ SUPPORTED_FORMATS: frozenset[str] = (
 # Carpeta por defecto para las figuras: <raíz del proyecto>/data/samples
 # (este archivo está en <raíz>/src/tem/loader.py)
 DEFAULT_OUTPUT_DIR: Path = (
-    Path(__file__).resolve().parents[2] / "data" / "samples"
+    Path(__file__).resolve().parents[2] / "data" / "tem"
 )
 
 # Percentiles (inferior, superior) que se llevan a 0 y 1 al normalizar

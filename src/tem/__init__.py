@@ -80,7 +80,12 @@ from .diffraction import (
     show_diffraction_results,
 )
 
+# Análisis completo de una imagen o carpeta (lo usan scripts/analizar_tem.py y la interfaz)
+from .analisis_completo import analizar_ruta
+
 __all__ = [
+    # Análisis completo
+    "analizar_ruta",
     # Etapa 1
     "load_tem_image",
     "preprocess_tem_image",

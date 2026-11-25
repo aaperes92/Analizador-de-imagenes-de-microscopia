@@ -47,6 +47,25 @@ uv run python scripts/analizar_tem.py "RUTA\imagen.dm3"
 uv run python scripts/analizar_tem.py "RUTA\patron.dm3" --difraccion
 ```
 
+La lógica del script está en
+[`src/tem/analisis_completo.py`](../src/tem/analisis_completo.py)
+(`analizar_ruta`, con las mismas opciones como parámetros); el script
+solo le pasa su sección CONFIGURACIÓN.
+
+**Desde la interfaz gráfica** (`uv run python main.py`, técnica TEM) se
+elige una imagen o una carpeta y las mismas opciones (filtro, umbral,
+fases, fondo, difracción y ancho instrumental). Las figuras y los CSV
+quedan en `data/samples/`; con una sola imagen, las figuras además se
+abren en ventanas aparte. Si a un patrón de difracción le faltan voltaje,
+longitud de cámara o píxel del detector, se piden en un diálogo (con la
+opción de usar el mismo valor para las demás imágenes); la corrección
+manual del centro del haz solo está en el script.
+Para eso, `read_camera_metadata` y `pipeline_diffraction` aceptan
+`pedir_dato` (una función `(texto, valor por defecto) -> número` que
+reemplaza a la pregunta por teclado) y `pipeline_diffraction` acepta
+`corregir_centro` (si se abre la ventana del centro; por defecto, igual
+que `interactive`). Sin esos parámetros todo funciona como antes.
+
 ---
 
 # Etapa 1 — Carga y preprocesamiento
