@@ -1,7 +1,15 @@
 [project]
-name = "analizador-de-im-genes-de-microscop-a"
+name = "analizador-microscopia"
 version = "0.1.0"
+description = "Análisis de imágenes de microscopía MOKE, SEM y TEM"
+readme = "README.md"
+authors = [
+    { name = "Mauricio Romano", email = "mauricio.romano@ib.edu.ar" },
+    { name = "Daniel Romero", email = "daniel.romero@ib.edu.ar" },
+    { name = "Ángel A. Pérez", email = "angel.perez@ib.edu.ar" },
+]
 requires-python = ">=3.14"
+
 dependencies = [
     "exifread>=3.5.1",
     "matplotlib>=3.11.2",
